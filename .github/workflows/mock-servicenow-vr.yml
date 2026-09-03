@@ -36,6 +36,13 @@ jobs:
       - name: Pull open findings and raise VR records
         uses: actions/github-script@v7
         with:
+          # GITHUB_TOKEN can read code scanning alerts but NOT Dependabot or
+          # secret scanning alerts -- those return "Resource not accessible by
+          # integration" no matter what permissions: block you write. To cover
+          # all three, create a fine-grained PAT with Dependabot alerts: read
+          # and Secret scanning alerts: read, store it as the VR_TOKEN secret.
+          # Without it this still runs, and reports CodeQL findings only.
+          github-token: ${{ secrets.VR_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
             const SLA = { critical: 7, high: 30, medium: 90, low: 180 };

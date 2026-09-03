@@ -170,6 +170,14 @@ declaring one fails to compile. So this polls the alert APIs, which is also how
 the real integration behaves: ServiceNow VR pulls from GitHub or receives a
 webhook server-side. It does not run inside Actions.
 
+**One token caveat**, and it will bite you in the bank sandbox too: the default
+`GITHUB_TOKEN` can read code scanning alerts but **not** Dependabot or secret
+scanning alerts -- both return `Resource not accessible by integration`
+regardless of the `permissions:` block. To have all three feed the VR queue,
+create a fine-grained PAT with *Dependabot alerts: read* and *Secret scanning
+alerts: read* and store it as a `VR_TOKEN` secret. Without it the workflow still
+runs and raises records for CodeQL findings only.
+
 **Say clearly:** this is a stand-in. In production the ServiceNow VR GitHub
 integration creates a Vulnerable Item and starts the SLA clock. What is
 faithful here is the *timing and the payload* — which fields cross the
