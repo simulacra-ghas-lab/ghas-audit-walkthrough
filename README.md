@@ -158,11 +158,17 @@ is worth pointing out -- the alert exists *because* someone overrode a control.
 Trigger the mock integration:
 
 ```bash
-gh workflow run mock-servicenow-vr.yml -f source=CodeQL -f severity=high
+gh workflow run mock-servicenow-vr.yml
 ```
 
 An Issue appears formatted as a VR record: number, state, CVE, severity, SLA
 days, due date, configuration item, affected asset, assignment group.
+
+Worth knowing, and worth saying if asked: **Actions cannot be triggered by a
+security alert.** `on: code_scanning_alert` is not a valid trigger -- a workflow
+declaring one fails to compile. So this polls the alert APIs, which is also how
+the real integration behaves: ServiceNow VR pulls from GitHub or receives a
+webhook server-side. It does not run inside Actions.
 
 **Say clearly:** this is a stand-in. In production the ServiceNow VR GitHub
 integration creates a Vulnerable Item and starts the SLA clock. What is
