@@ -51,10 +51,21 @@ arrives in Stage 2.
 
 ```bash
 git checkout -b feature/audit-demo
+
+# Add a dependency with known critical advisories.
+npm pkg set dependencies.handlebars=4.0.5
+git commit -am "Add handlebars for template rendering"
 ```
 
 Point at `src/server.js` and `package.json`. Note that `src/config.js` reads
 credentials from the environment -- the clean pattern, before the demo breaks it.
+
+**Why the dependency is added here rather than already present:**
+`dependency-review-action` only inspects the *diff*. Vulnerable packages already
+on `main` never trip it -- verified, it reports "did not detect any vulnerable
+packages" while the Security tab shows ten. The SCA gate only fires on
+dependencies the pull request introduces. Worth knowing before an auditor asks
+why a repo full of vulnerabilities has a passing SCA check.
 
 **Auditor will ask:** *does anything stop the developer writing this?*
 Honest answer: nothing stops them writing it. The controls are detective from
@@ -72,17 +83,30 @@ it means nothing credential-shaped is ever stored in this repository, and the
 value is provably random rather than a real key someone might recognise:
 
 ```bash
-FAKE_ID="AKIA$(LC_ALL=C tr -dc 'A-Z0-9' </dev/urandom | head -c 16)"
+# Base32 alphabet (A-Z, 2-7). This matters -- see below.
+FAKE_ID="AKIA$(LC_ALL=C tr -dc 'A-Z2-7' </dev/urandom | head -c 16)"
+FAKE_SECRET="$(LC_ALL=C tr -dc 'A-Za-z0-9+/' </dev/urandom | head -c 40)"
 
 cat >> src/config.js <<EOF
 
 // Added live during the demo. Synthetic -- authenticates to nothing.
 const legacyAccessKeyId = '$FAKE_ID'
+const legacySecretAccessKey = '$FAKE_SECRET'
 EOF
 
 git add src/config.js && git commit -m "Add legacy integration key"
 git push origin feature/audit-demo
 ```
+
+> **Both lines are required, and the alphabet matters.** This was verified the
+> hard way. A key ID alone does not trigger push protection, no matter how well
+> formed. A key ID built from `A-Z0-9` does not trigger it either, because real
+> AWS key IDs are base32 and `0`, `1`, `8`, `9` never appear in them. Only the
+> base32 ID *paired* with a 40-character secret is detected, as
+> `Amazon AWS Access Key ID` **and** `Amazon AWS Secret Access Key`.
+>
+> Get this wrong and the push simply succeeds, in front of your audience, with
+> no error to explain it. Rehearse this step specifically.
 
 The push is **rejected** at the git layer. This is the strongest moment in the
 walkthrough — the finding never reaches the server.
@@ -133,6 +157,9 @@ then the "Show paths" view — the data-flow trace from `req.query.host` to
 **Auditor will ask:** *can developers bypass the findings?*
 Three separate answers, and they are worth separating:
 
+0. **Note the gate is diff-scoped** — the `code_scanning` rule blocks on alerts the
+   pull request *introduces*. Pre-existing alerts on `main` do not block unrelated
+   pull requests, which is why routine maintenance here still merges cleanly.
 1. **Dismiss the alert** — possible, requires a reason, recorded, alert stays visible as dismissed
 2. **Bypass the ruleset** — only for actors in `bypass_actors`; currently empty
 3. **Merge anyway** — not possible while the ruleset is `active` and the check is required
@@ -199,6 +226,7 @@ The repository ruleset, managed as code by safe-settings:
 | Rule | Effect |
 | --- | --- |
 | `code_scanning` | Blocks merge on CodeQL alerts at high or above / error level |
+| `required_status_checks` | Makes the SCA gate binding rather than advisory |
 | `pull_request` | No direct pushes to `main` |
 | `deletion`, `non_fast_forward` | Branch cannot be deleted or force-pushed |
 
@@ -206,6 +234,13 @@ Show that the ruleset is not clicked in by an administrator but declared in the
 `admin` repository and applied by safe-settings. For an audit, provenance of
 the control matters as much as the control: there is a reviewed commit behind
 it, and drift is corrected automatically.
+
+**A distinction auditors reward:** a failing check and a *blocking* check are
+not the same thing. Before `review` was added to `required_status_checks`, the
+dependency-review job failed loudly on the pull request and the merge button
+stayed enabled -- `mergeable=MERGEABLE, state=UNSTABLE`. Adding it flips the
+state to `BLOCKED`. If asked "does this stop a release?", that field is the
+evidence, not the red X.
 
 ### Exceptions and bypasses
 
@@ -251,9 +286,23 @@ Nothing here is bound to a particular org.
    gh api -X POST repos/$ORG/$REPO/rulesets --input ruleset.json
    ```
 
-5. **Rehearse the whole path once before presenting.** Push protection has to
+5. Make the SCA gate binding by adding the dependency-review job to the
+   ruleset's `required_status_checks`. Otherwise it fails visibly but blocks
+   nothing.
+6. **Rehearse the whole path once before presenting.** Push protection has to
    actually fire, and a failed demo of a preventive control reads worse than
    not demonstrating it.
+
+### Things verified here that cost time to discover
+
+| Behaviour | Consequence |
+| --- | --- |
+| Actions cannot be triggered by `code_scanning_alert`, `secret_scanning_alert` or `dependabot_alert` | A workflow declaring one fails to compile with zero jobs. Poll the APIs instead. |
+| `GITHUB_TOKEN` cannot read Dependabot or secret scanning alerts | Returns `Resource not accessible by integration` regardless of `permissions:`. Needs a PAT. |
+| An AWS key ID alone never trips push protection | Must be paired with a 40-character secret access key. |
+| AWS key IDs are base32 | A random `A-Z0-9` string silently matches nothing. |
+| `dependency-review-action` is diff-scoped | Pre-existing vulnerable packages never fail a pull request. |
+| A failing check is not a blocking check | Requires `required_status_checks` to actually gate the merge. |
 
 ### If the target org already uses safe-settings
 
