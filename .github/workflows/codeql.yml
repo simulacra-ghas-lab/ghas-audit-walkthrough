@@ -1,0 +1,31 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * 1"
+
+jobs:
+  analyze:
+    name: Analyze JavaScript
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # security-extended surfaces more than the default suite. Swap to
+          # `security-and-quality` if the audit wants maintainability too.
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

@@ -1,0 +1,121 @@
+# Mock ServiceNow Vulnerability Response integration.
+#
+# This creates a GitHub Issue shaped like a VR record so the walkthrough can
+# answer "at what point is a vulnerability created and sent to ServiceNow VR?"
+# with something concrete on screen. No ServiceNow instance is involved.
+#
+# Two triggers on purpose:
+#   - the alert webhooks, which is how a real integration fires
+#   - workflow_dispatch, because a live demo should never depend on waiting
+#     for a webhook in front of an audience
+#
+# Swap the "Create VR record" step for a real POST to
+# /api/now/table/sn_vul_vulnerable_item when wiring an actual instance.
+
+name: Mock ServiceNow VR
+
+on:
+  code_scanning_alert:
+    types: [created, reopened]
+  secret_scanning_alert:
+    types: [created, reopened]
+  dependabot_alert:
+    types: [created, reopened]
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "Which finding to raise a VR record for"
+        type: choice
+        options: [CodeQL, Secret Scanning, Dependabot]
+        default: CodeQL
+      severity:
+        description: "Severity"
+        type: choice
+        options: [critical, high, medium, low]
+        default: high
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  raise:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create VR record
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const p = context.payload;
+            const alert = p.alert || {};
+
+            // --- normalise across the three alert shapes -------------------
+            let source, title, cve = 'n/a', severity, alertUrl = '', asset;
+
+            if (context.eventName === 'code_scanning_alert') {
+              source   = 'GitHub Advanced Security / CodeQL';
+              title    = alert.rule?.description || alert.rule?.id || 'Code scanning finding';
+              severity = alert.rule?.security_severity_level || alert.rule?.severity || 'medium';
+              alertUrl = alert.html_url || '';
+              asset    = alert.most_recent_instance?.location?.path || 'source';
+            } else if (context.eventName === 'secret_scanning_alert') {
+              source   = 'GitHub Advanced Security / Secret Scanning';
+              title    = `Exposed credential: ${alert.secret_type_display_name || alert.secret_type}`;
+              severity = 'critical';
+              alertUrl = alert.html_url || '';
+              asset    = 'repository';
+            } else if (context.eventName === 'dependabot_alert') {
+              source   = 'Dependabot (stands in for Sonatype)';
+              const pkg = alert.dependency?.package?.name || 'dependency';
+              cve      = alert.security_advisory?.cve_id || 'n/a';
+              title    = `Vulnerable dependency: ${pkg}`;
+              severity = alert.security_advisory?.severity || 'medium';
+              alertUrl = alert.html_url || '';
+              asset    = alert.dependency?.manifest_path || 'package.json';
+            } else {
+              const i  = p.inputs || {};
+              source   = `${i.source} (manual demo trigger)`;
+              title    = `${i.source} finding raised for demonstration`;
+              severity = i.severity || 'high';
+              asset    = 'src/';
+            }
+
+            // --- SLA clock, as a real VR record would carry ----------------
+            const slaDays = { critical: 7, high: 30, medium: 90, low: 180 }[severity] ?? 90;
+            const due = new Date(Date.now() + slaDays * 864e5).toISOString().slice(0, 10);
+            const vr  = `VR${String(context.runNumber).padStart(7, '0')}`;
+
+            const body = [
+              `> Mock record. No ServiceNow instance was contacted.`,
+              ``,
+              `| Field | Value |`,
+              `| --- | --- |`,
+              `| Number | \`${vr}\` |`,
+              `| State | New |`,
+              `| Source | ${source} |`,
+              `| CVE | ${cve} |`,
+              `| Severity | **${severity}** |`,
+              `| Remediation SLA | ${slaDays} days |`,
+              `| Due | ${due} |`,
+              `| Configuration item | ${context.repo.owner}/${context.repo.repo} |`,
+              `| Affected asset | \`${asset}\` |`,
+              `| Assignment group | Application Security |`,
+              `| Detected | ${new Date().toISOString()} |`,
+              ``,
+              alertUrl ? `**Originating alert:** ${alertUrl}` : `_Raised manually via workflow_dispatch._`,
+              ``,
+              `---`,
+              `In production this record is created by the ServiceNow VR GitHub`,
+              `integration, which polls or receives the alert, opens a Vulnerable Item,`,
+              `and starts the remediation SLA clock shown above.`
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[${vr}] ${title}`,
+              body,
+              labels: ['servicenow-vr', 'vulnerability', `severity:${severity}`]
+            });
+
+            core.notice(`Created mock VR record ${vr} (${severity}, due ${due})`);

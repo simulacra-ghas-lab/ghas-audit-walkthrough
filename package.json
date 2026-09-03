@@ -1,0 +1,15 @@
+{
+  "name": "ghas-audit-walkthrough",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Synthetic app used to demonstrate GHAS controls across the SDLC. Not real code.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "4.18.2",
+    "lodash": "4.17.15",
+    "minimist": "1.2.0"
+  }
+}
