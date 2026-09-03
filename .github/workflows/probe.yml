@@ -1,0 +1,9 @@
+name: Probe
+on:
+  code_scanning_alert:
+    types: [created]
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
