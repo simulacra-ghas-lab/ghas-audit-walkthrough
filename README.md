@@ -18,7 +18,7 @@ substitution you didn't mention will discount everything else you showed.
 | Control | Here | Reality |
 | --- | --- | --- |
 | SAST | CodeQL, `security-extended` | Same product |
-| Secret detection | GitHub secret scanning + push protection | Same product |
+| Secret detection | GitHub secret scanning + push protection | Same product, but **self-service bypass here vs. delegated (approval-gated) bypass in most enterprise setups** — see Stage 2b |
 | Merge gating | Repository ruleset, applied by safe-settings | Same mechanism |
 | SCA | Dependabot + `dependency-review-action` | **Sonatype** — same control shape, different policy engine |
 | Vulnerability tracking | GitHub Issue via `mock-servicenow-vr.yml` | **ServiceNow VR** — no instance is contacted |
@@ -116,17 +116,61 @@ the line, and a URL to either remove the secret or request a bypass.
 
 ### 2b. The bypass path
 
-Follow the bypass URL. The developer must choose a reason:
+Push protection has **two modes**, and they give opposite answers to the
+question an auditor is about to ask. Know which one you are demonstrating.
 
-- It's used in tests
-- It's a false positive
-- I'll fix it later
+| | Self-service bypass | Delegated bypass |
+| --- | --- | --- |
+| Who decides | The developer | A designated approver group |
+| After choosing a reason | Push proceeds immediately | Push stays blocked, pending review |
+| Available on | Any repo with push protection | GHAS / enterprise configuration |
+
+This lab runs the **self-service** mode, because that is what a Free-plan
+organization gets. Most enterprise configurations run **delegated bypass**, so
+rehearse the narration for the mode you will actually be presenting.
+
+#### Self-service (what this lab shows)
+
+Follow the unblock URL and choose a reason — used in tests, false positive, or
+I'll fix it later — and the push then proceeds. The bypass is recorded with the
+actor, reason, and timestamp, and raises an alert to security.
+
+#### Delegated bypass (what an enterprise setup shows)
+
+The developer **cannot unblock themselves**. Choosing a reason submits a
+*request*; the push stays blocked until someone in the approver group approves
+or denies it. On approval the developer re-pushes. On denial the secret has to
+come out.
+
+**Show the dialog through the web editor, not the CLI.** From the command line
+this is a wall of `remote:` output plus a URL. Committing the file through the
+GitHub web UI produces the actual modal, which is what the audience wants to
+look at. Say which surface you are showing, since the developer's real workflow
+is the CLI.
 
 **Auditor will ask:** *can a developer bypass this?*
-Yes — and that is the honest answer. Every bypass is recorded with the actor,
-the reason, and a timestamp, and it raises an alert to security. Show the audit
-log rather than claiming the control is absolute. Overclaiming here is the
-fastest way to lose the room.
+
+Under delegated bypass the answer is **no — they can only request one**, and
+that is a genuinely stronger control than most teams can claim. Say it plainly,
+then show the approver group.
+
+Have these four ready, because they are configuration facts rather than product
+behaviour and they are where the questions go next:
+
+1. **Who is in the approver group**, and what it takes to get added
+2. **What the developer sees on denial**
+3. **Whether the request and the approval both land in the org audit log** —
+   confirm this before the call rather than asserting it live
+4. **Whether approval grants a time window or a single push**
+
+> **Segregation of duties — expect this one.** Where the approver group is
+> org owners plus security managers, org owners are typically members *by
+> default* rather than by explicit grant. That means a developer who is also an
+> org owner could approve their own bypass request. Whether that is a real
+> exposure depends on how many org owners there are and whether any of them
+> commit application code. Have the org-owner count and that answer ready;
+> being the one who raises it reads far better than being the one who gets
+> caught by it.
 
 ### 2c. What runs on push
 
